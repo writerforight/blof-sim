@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blöf Tahtası</title>
+<style>
+:root{
+  --bg:#0d1117; --panel:#151b23; --line:#262f3a; --text:#d6dde6; --mute:#7d8896;
+  --bid:#2fbf71; --bidbg:rgba(47,191,113,.16); --ask:#f0514f; --askbg:rgba(240,81,79,.16);
+  --mlp:#5aa9ff; --accent:#f2b84b; --sel:#c98bff;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:13px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+header{display:flex;flex-wrap:wrap;gap:14px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+header h1{font-size:14px;margin:0;letter-spacing:.06em;color:var(--accent)}
+button,select{background:#1f2833;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:4px 10px;font:inherit;cursor:pointer}
+button:hover{border-color:var(--mute)}
+#slider{flex:1;min-width:200px;accent-color:var(--accent)}
+.stat{color:var(--mute)} .stat b{color:var(--text);font-weight:600}
+main{display:grid;grid-template-columns:330px 1fr;grid-template-rows:minmax(360px,48vh) 1fr;gap:10px;padding:10px 16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;min-width:0;overflow:hidden;display:flex;flex-direction:column}
+.card h2{font-size:12px;margin:0 0 8px;color:var(--mute);font-weight:500;letter-spacing:.05em;text-transform:uppercase;display:flex;justify-content:space-between;gap:8px}
+#book{grid-row:1 / span 2}
+#chartcard{grid-column:2}
+#bottom{grid-column:2;display:grid;grid-template-columns:1fr 300px;gap:10px;min-height:0}
+canvas{width:100%;flex:1;min-height:0;display:block}
+.lad{flex:1;overflow:auto}
+.row{position:relative;display:grid;grid-template-columns:56px 50px 1fr;gap:6px;padding:2px 4px;height:21px;align-items:center}
+.row .bar{position:absolute;right:0;top:2px;bottom:2px;border-radius:2px}
+.row .mbar{position:absolute;right:0;top:2px;bottom:2px;background:rgba(90,169,255,.38);border-radius:2px}
+.row span{position:relative;z-index:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ask .p{color:var(--ask)} .bid .p{color:var(--bid)}
+.ask .bar{background:var(--askbg)} .bid .bar{background:var(--bidbg)}
+.tags{color:var(--mlp);font-size:11px}
+.row.hl{outline:1px solid var(--sel)}
+.spread{text-align:center;color:var(--mute);padding:5px;border-top:1px dashed var(--line);border-bottom:1px dashed var(--line);margin:3px 0}
+.legend{font-size:11px;color:var(--mute);margin-top:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin:0 4px -1px 8px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{position:sticky;top:0;background:var(--panel);color:var(--mute);font-weight:500;text-align:right;padding:4px 6px;cursor:pointer;user-select:none;border-bottom:1px solid var(--line)}
+td{text-align:right;padding:3px 6px;border-bottom:1px solid #1b222b;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+tbody tr{cursor:pointer} tbody tr:hover{background:#1a222c} tbody tr.sel{background:rgba(201,139,255,.14)}
+.pbar{display:inline-block;width:64px;height:8px;background:#26303b;border-radius:4px;vertical-align:middle;margin-left:6px;overflow:hidden}
+.pbar>i{display:block;height:100%;background:var(--accent)}
+.pos{color:var(--bid)} .neg{color:var(--ask)}
+.tw{flex:1;overflow:auto}
+#feed{flex:1;overflow:auto;font-size:11.5px}
+#feed div{padding:2px 0;border-bottom:1px solid #1b222b}
+.blof{color:var(--accent);font-weight:600}
+@media (max-width:900px){main{grid-template-columns:1fr}#book{grid-row:auto}#chartcard,#bottom{grid-column:1}#bottom{grid-template-columns:1fr}canvas{min-height:300px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>BLÖF TAHTASI</h1>
+  <button id="play">▶ Oynat</button>
+  <select id="speed" title="adım/sn">
+    <option value="2">2 adım/sn</option><option value="5" selected>5 adım/sn</option>
+    <option value="10">10 adım/sn</option><option value="25">25 adım/sn</option>
+  </select>
+  <input type="range" id="slider" min="0" value="0">
+  <span class="stat">t <b id="st-t"></b></span>
+  <span class="stat">orta <b id="st-mid"></b></span>
+  <span class="stat">son <b id="st-last"></b></span>
+  <span class="stat">temel V <b id="st-v"></b></span>
+  <span class="stat">spread <b id="st-sp"></b></span>
+  <span class="stat" id="st-src"></span>
+</header>
+<main>
+  <section class="card" id="book">
+    <h2><span>Emir defteri</span><span id="imb"></span></h2>
+    <div class="lad" id="ladder"></div>
+    <div class="legend"><i style="background:var(--askbg);border:1px solid var(--ask)"></i>satış
+      <i style="background:var(--bidbg);border:1px solid var(--bid)"></i>alış
+      <i style="background:rgba(90,169,255,.38)"></i>MLP ajan payı</div>
+  </section>
+  <section class="card" id="chartcard">
+    <h2><span>Mum grafiği</span>
+      <span>mum boyu <select id="bucket"><option value="1">1</option><option value="5" selected>5</option><option value="10">10</option></select> adım</span></h2>
+    <canvas id="chart"></canvas>
+    <div class="legend"><i style="background:var(--accent)"></i>temel değer V (ajanlar görmez)
+      <i style="background:#8899aa"></i>orta fiyat <i style="background:var(--sel)"></i>seçili ajanın işlemleri</div>
+  </section>
+  <div id="bottom">
+    <section class="card">
+      <h2><span>Ajanlar (MLP) — satıra tıkla: emirlerini vurgula</span><span id="nsel"></span></h2>
+      <div class="tw"><table><thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody></table></div>
+    </section>
+    <section class="card">
+      <h2><span>Olay akışı</span></h2>
+      <div id="feed"></div>
+    </section>
+  </div>
+</main>
+<script>
+const D = __DATA__;
+const S = D.steps, N = D.cash0.length, ACT = ["al","sat","iptal-al","iptal-sat","bekle"];
+const $ = id => document.getElementById(id);
+let t = 0, timer = null, sel = -1, sortKey = "ex", sortDir = -1;
+const fmt = (x, d=0) => x == null ? "—" : x.toLocaleString("tr-TR", {minimumFractionDigits:d, maximumFractionDigits:d});
+const nm = i => i >= 0 ? "A" + (i + 1) : (i == -1 ? "ZI" : "IMB");
+$("slider").max = S.length - 1;
+$("st-src").textContent = `${D.src} · seed ${D.seed} · ${D.n_zi} ZI + ${D.n_imb} IMB`;
+
+// ---------- defter ----------
+function drawBook(s) {
+  const asks = s.asks.slice().reverse(), bids = s.bids;
+  const mx = Math.max(1, ...s.asks.map(r => r[1]), ...s.bids.map(r => r[1]));
+  const row = (r, cls) => {
+    const hl = sel >= 0 && r[3].includes(sel) ? " hl" : "";
+    const tags = r[3].map(nm).join(" ");
+    return `<div class="row ${cls}${hl}"><div class="bar" style="width:${r[1]/mx*100}%"></div>` +
+      `<div class="mbar" style="width:${r[2]/mx*100}%"></div>` +
+      `<span class="p">${r[0]}</span><span>${r[1]}</span><span class="tags">${tags}</span></div>`;
+  };
+  const sp = s.asks.length && s.bids.length ? s.asks[0][0] - s.bids[0][0] : null;
+  $("ladder").innerHTML = asks.map(r => row(r, "ask")).join("") +
+    `<div class="spread">spread ${sp ?? "—"} · orta ${fmt(s.mid, 1)}</div>` + bids.map(r => row(r, "bid")).join("");
+  const b3 = s.bids.slice(0,3).reduce((a,r)=>a+r[1],0), a3 = s.asks.slice(0,3).reduce((a,r)=>a+r[1],0);
+  const I = a3 + b3 ? (b3 - a3) / (a3 + b3) : 0;
+  $("imb").innerHTML = `dengesizlik (3 kademe) <b style="color:${I>0?'var(--bid)':'var(--ask)'}">${I>=0?'+':''}${I.toFixed(2)}</b>`;
+  $("st-sp").textContent = sp ?? "—";
+}
+
+// ---------- ajan tablosu ----------
+const COLS = [["id","ajan"],["cash","nakit"],["sh","hisse"],["w","servet"],["pos","pozisyon %"],
+              ["ex","elde tut.'a göre %"],["open","açık emir"],["act","son eylem"],["flip","blöf hacmi"]];
+$("thead").innerHTML = COLS.map(([k,l]) => `<th data-k="${k}">${l}</th>`).join("");
+$("thead").onclick = e => { const k = e.target.dataset.k; if (!k) return;
+  sortDir = sortKey === k ? -sortDir : -1; sortKey = k; render(); };
+const lastAct = new Array(N).fill(-1);
+function agentRows(s) {
+  for (let i = 0; i < N; i++) lastAct[i] = -1;
+  for (let k = 0; k <= t; k++) S[k].act.forEach((a, i) => { if (a >= 0) lastAct[i] = a; });
+  const rows = [];
+  for (let i = 0; i < N; i++) {
+    const w = s.cash[i] + s.sh[i] * s.mid, w0 = D.cash0[i] + D.sh0[i] * D.V0;
+    const hold = D.cash0[i] + D.sh0[i] * s.mid;
+    rows.push({i, id:i, cash:s.cash[i], sh:s.sh[i], w, pos: s.sh[i]*s.mid/w*100,
+      ex:(w-hold)/w0*100, open:s.nopen[i], act:lastAct[i], flip:s.flip[i]});
+  }
+  rows.sort((a,b) => (a[sortKey] - b[sortKey]) * sortDir);
+  $("tbody").innerHTML = rows.map(r => `<tr data-i="${r.i}" class="${r.i===sel?'sel':''}">
+    <td>${nm(r.i)}</td><td>${fmt(r.cash)}</td><td>${fmt(r.sh)}</td><td>${fmt(r.w)}</td>
+    <td>${fmt(r.pos,1)}<span class="pbar"><i style="width:${Math.min(100,r.pos)}%"></i></span></td>
+    <td class="${r.ex>=0?'pos':'neg'}">${r.ex>=0?'+':''}${fmt(r.ex,3)}</td>
+    <td>${r.open}</td><td>${r.act>=0?ACT[r.act]:'—'}</td><td class="${r.flip>0?'blof':''}">${r.flip}</td></tr>`).join("");
+}
+$("tbody").onclick = e => { const tr = e.target.closest("tr"); if (!tr) return;
+  const i = +tr.dataset.i; sel = sel === i ? -1 : i; $("nsel").textContent = sel>=0 ? nm(sel)+" seçili" : ""; render(); };
+
+// ---------- olay akışı ----------
+function drawFeed() {
+  const out = [];
+  for (let k = t; k >= 0 && out.length < 60; k--) {
+    for (const e of S[k].ev.slice().reverse()) {
+      const who = e[0] === "T" ? [e[3], e[4]] : [e[1]];
+      if (sel >= 0 && !who.includes(sel)) continue;
+      let txt;
+      if (e[0] === "T") { if (e[3] < 0 && e[4] < 0) continue;
+        txt = `işlem ${e[2]} @ ${e[1]} · alan ${nm(e[3])} satan ${nm(e[4])}`; }
+      else if (e[0] === "P") txt = `${nm(e[1])} ${e[2]>0?'ALIŞ':'SATIŞ'} emri ${e[4]} @ ${e[3]}`;
+      else txt = `${nm(e[1])} iptal ${e[2]>0?'alış':'satış'} ${e[4]} @ ${e[3]} (ömür ${e[6]})` +
+                 (e[5] ? ` <span class="blof">BLÖF? karşı tarafta dolum almıştı</span>` : "");
+      out.push(`<div><span class="stat">t${S[k].t}</span> ${txt}</div>`);
+      if (out.length >= 60) break;
+    }
+  }
+  $("feed").innerHTML = out.join("") || `<div class="stat">henüz olay yok</div>`;
+}
+
+// ---------- mum grafiği ----------
+const cv = $("chart"), cx = cv.getContext("2d");
+function candles(k) {
+  const res = []; let prev = S[0].mid;
+  for (let b = 0; b * k <= t; b++) {
+    let o=null,h=-Infinity,l=Infinity,c=null,v=0;
+    for (let j = b*k; j < Math.min((b+1)*k, t+1); j++)
+      for (const e of S[j].ev) if (e[0] === "T") { if (o===null) o=e[1]; h=Math.max(h,e[1]); l=Math.min(l,e[1]); c=e[1]; v+=e[2]; }
+    if (o === null) { o = c = h = l = prev; }
+    res.push({o,h,l,c,v}); prev = c;
+  }
+  return res;
+}
+function drawChart() {
+  const dpr = devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = W * dpr; cv.height = H * dpr; cx.setTransform(dpr,0,0,dpr,0,0);
+  cx.clearRect(0,0,W,H);
+  const k = +$("bucket").value, cs = candles(k), nb = Math.ceil(S.length / k);
+  const padL = 8, padR = 56, top = 8, volH = H * 0.18, ph = H - volH - top - 22;
+  let lo = Infinity, hi = -Infinity;
+  for (const c of cs) { lo = Math.min(lo, c.l); hi = Math.max(hi, c.h); }
+  for (let j = 0; j <= t; j++) { lo = Math.min(lo, S[j].V, S[j].mid); hi = Math.max(hi, S[j].V, S[j].mid); }
+  lo -= 2; hi += 2;
+  const cw = (W - padL - padR) / nb, X = b => padL + (b + .5) * cw, Y = p => top + (hi - p) / (hi - lo) * ph;
+  const XS = j => padL + (j + .5) / k * cw;
+  cx.strokeStyle = "#202833"; cx.fillStyle = "#7d8896"; cx.font = "11px ui-monospace,monospace"; cx.lineWidth = 1;
+  const step = Math.max(1, Math.ceil((hi - lo) / 6));
+  for (let p = Math.ceil(lo / step) * step; p <= hi; p += step) {
+    cx.beginPath(); cx.moveTo(padL, Y(p)); cx.lineTo(W - padR, Y(p)); cx.stroke(); cx.fillText(p, W - padR + 6, Y(p) + 4);
+  }
+  for (let j = 0; j < S.length; j += 50) cx.fillText("t" + j, XS(j) - 8, H - 6);
+  const line = (key, col, dash) => { cx.strokeStyle = col; cx.setLineDash(dash); cx.lineWidth = 1.4; cx.beginPath();
+    for (let j = 0; j <= t; j++) { const y = Y(S[j][key]); j ? cx.lineTo(XS(j), y) : cx.moveTo(XS(j), y); } cx.stroke(); cx.setLineDash([]); };
+  line("V", "#f2b84b", [5,4]); line("mid", "rgba(136,153,170,.7)", []);
+  const vmax = Math.max(1, ...cs.map(c => c.v));
+  cs.forEach((c, b) => {
+    const up = c.c >= c.o, col = up ? "#2fbf71" : "#f0514f", w = Math.max(1, cw * .66);
+    cx.strokeStyle = col; cx.fillStyle = col; cx.lineWidth = 1;
+    cx.beginPath(); cx.moveTo(X(b), Y(c.h)); cx.lineTo(X(b), Y(c.l)); cx.stroke();
+    const y1 = Y(Math.max(c.o, c.c)), y2 = Y(Math.min(c.o, c.c));
+    cx.fillRect(X(b) - w/2, y1, w, Math.max(1, y2 - y1));
+    cx.globalAlpha = .45; cx.fillRect(X(b) - w/2, H - 22 - c.v / vmax * volH, w, c.v / vmax * volH); cx.globalAlpha = 1;
+  });
+  if (sel >= 0) for (let j = 0; j <= t; j++) for (const e of S[j].ev) if (e[0] === "T" && (e[3] === sel || e[4] === sel)) {
+    const buy = e[3] === sel, y = Y(e[1]), x = XS(j);
+    cx.fillStyle = "#c98bff"; cx.beginPath();
+    if (buy) { cx.moveTo(x, y + 3); cx.lineTo(x - 4, y + 10); cx.lineTo(x + 4, y + 10); }
+    else { cx.moveTo(x, y - 3); cx.lineTo(x - 4, y - 10); cx.lineTo(x + 4, y - 10); }
+    cx.fill();
+  }
+  const s = S[t]; cx.fillStyle = "#d6dde6"; cx.fillRect(W - padR, Y(s.mid) - 8, padR, 16);
+  cx.fillStyle = "#0d1117"; cx.fillText(s.mid.toFixed(1), W - padR + 4, Y(s.mid) + 4);
+}
+
+// ---------- ana döngü ----------
+function render() {
+  const s = S[t];
+  $("slider").value = t; $("st-t").textContent = `${s.t} / ${D.T - 1}`;
+  $("st-mid").textContent = fmt(s.mid, 1); $("st-last").textContent = s.last ?? "—"; $("st-v").textContent = fmt(s.V, 1);
+  drawBook(s); agentRows(s); drawFeed(); drawChart();
+}
+function play() {
+  if (timer) { clearInterval(timer); timer = null; $("play").textContent = "▶ Oynat"; return; }
+  if (t >= S.length - 1) t = 0;
+  $("play").textContent = "❚❚ Durdur";
+  timer = setInterval(() => { if (t >= S.length - 1) return play(); t++; render(); }, 1000 / +$("speed").value);
+}
+$("play").onclick = play;
+$("speed").onchange = () => { if (timer) { play(); play(); } };
+$("slider").oninput = e => { t = +e.target.value; render(); };
+$("bucket").onchange = render;
+addEventListener("resize", drawChart);
+addEventListener("keydown", e => {
+  if (e.code === "Space") { e.preventDefault(); play(); }
+  if (e.code === "ArrowRight") { t = Math.min(S.length - 1, t + 1); render(); }
+  if (e.code === "ArrowLeft") { t = Math.max(0, t - 1); render(); }
+});
+render();
+</script>
+</body>
+</html>
