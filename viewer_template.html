@@ -58,7 +58,7 @@ tbody tr{cursor:pointer} tbody tr:hover{background:#1a222c} tbody tr.sel{backgro
   <button id="play">▶ Oynat</button>
   <select id="speed" title="adım/sn">
     <option value="2">2 adım/sn</option><option value="5" selected>5 adım/sn</option>
-    <option value="10">10 adım/sn</option><option value="25">25 adım/sn</option><option value="60">60 adım/sn</option>
+    <option value="10">10 adım/sn</option><option value="25">25 adım/sn</option><option value="60">60 adım/sn</option><option value="200">200 adım/sn</option><option value="500">500 adım/sn</option>
   </select>
   <input type="range" id="slider" min="0" value="0">
   <span class="stat">t <b id="st-t"></b></span>
@@ -78,7 +78,7 @@ tbody tr{cursor:pointer} tbody tr:hover{background:#1a222c} tbody tr.sel{backgro
   </section>
   <section class="card" id="chartcard">
     <h2><span>Mum grafiği</span>
-      <span>mum boyu <select id="bucket"><option value="1">1</option><option value="5" selected>5</option><option value="10">10</option><option value="20">20</option><option value="50">50</option></select> adım</span></h2>
+      <span>pencere <select id="win"><option value="300">300</option><option value="1000">1000</option><option value="3000">3000</option><option value="0">tümü</option></select> · mum boyu <select id="bucket"><option value="1">1</option><option value="5">5</option><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option><option value="200">200</option><option value="500">500</option></select> adım</span></h2>
     <canvas id="chart"></canvas>
     <div class="legend"><i style="background:var(--accent)"></i>temel değer V (ajanlar görmez)
       <i style="background:#8899aa"></i>orta fiyat <i style="background:var(--sel)"></i>seçili ajanın işlemleri</div>
@@ -96,30 +96,45 @@ tbody tr{cursor:pointer} tbody tr:hover{background:#1a222c} tbody tr.sel{backgro
 </main>
 <script>
 const D = __DATA__;
-const S = D.steps, N = D.cash0.length, ACT = ["al","sat","iptal-al","iptal-sat","bekle"];
+const n = D.mid.length, N = D.cash0.length, ACT = ["al","sat","iptal-al","iptal-sat","bekle"];
 const $ = id => document.getElementById(id);
 let t = 0, timer = null, sel = -1, sortKey = "ex", sortDir = -1;
 const fmt = (x, d=0) => x == null ? "—" : x.toLocaleString("tr-TR", {minimumFractionDigits:d, maximumFractionDigits:d});
 const nm = i => i >= 0 ? "A" + (i + 1) : (i == -1 ? "ZI" : "IMB");
-$("slider").max = S.length - 1;
-$("bucket").value = S.length > 600 ? 20 : S.length > 300 ? 10 : 5;
-$("st-src").textContent = `${D.src} · seed ${D.seed} · ${D.n_zi} ZI + ${D.n_imb} IMB`;
+const lv = r => [r[0], r[1], r[2] || 0, r[3] || []];
+const S = Array.from({length: n}, (_, k) => ({t: k, V: D.V[k], mid: D.mid[k], last: D.last[k],
+  get bids() { return D.bids[k].map(lv); }, get asks() { return D.asks[k].map(lv); },
+  cash: D.cash[k], sh: D.sh[k], nopen: D.nopen[k], ev: D.ev[k]}));
+// birikimli son eylem ve blöf hacmi: yüklemede bir kez
+const LA = new Int8Array(n * N), FL = new Int32Array(n * N);
+{ const la = new Int8Array(N).fill(-1), fl = new Int32Array(N);
+  for (let k = 0; k < n; k++) {
+    const a = D.act[k];
+    for (let i = 0; i < N; i++) { const c = a.charCodeAt(i) - 48; if (c >= 0 && c < 5) la[i] = c; }
+    for (const e of D.ev[k]) if (e[0] === "C" && e[5]) fl[e[1]] += e[4];
+    LA.set(la, k * N); FL.set(fl, k * N);
+  } }
+$("slider").max = n - 1;
+$("win").value = n > 1500 ? 1000 : 0;
+$("st-src").textContent = `${D.src} · seed ${D.seed} · ${n.toLocaleString("tr-TR")} adım · ${D.n_zi} ZI + ${D.n_imb} IMB`;
+function autoBucket() { const span = +$("win").value || n;
+  $("bucket").value = [1,5,10,20,50,100,200,500].find(k => span / k <= 90) || 500; }
+autoBucket();
 
 // ---------- defter ----------
 function drawBook(s) {
-  const asks = s.asks.slice().reverse(), bids = s.bids;
-  const mx = Math.max(1, ...s.asks.map(r => r[1]), ...s.bids.map(r => r[1]));
+  const A = s.asks, B = s.bids, asks = A.slice().reverse();
+  const mx = Math.max(1, ...A.map(r => r[1]), ...B.map(r => r[1]));
   const row = (r, cls) => {
     const hl = sel >= 0 && r[3].includes(sel) ? " hl" : "";
-    const tags = r[3].map(nm).join(" ");
     return `<div class="row ${cls}${hl}"><div class="bar" style="width:${r[1]/mx*100}%"></div>` +
       `<div class="mbar" style="width:${r[2]/mx*100}%"></div>` +
-      `<span class="p">${r[0]}</span><span>${r[1]}</span><span class="tags">${tags}</span></div>`;
+      `<span class="p">${r[0]}</span><span>${r[1]}</span><span class="tags">${r[3].map(nm).join(" ")}</span></div>`;
   };
-  const sp = s.asks.length && s.bids.length ? s.asks[0][0] - s.bids[0][0] : null;
+  const sp = A.length && B.length ? A[0][0] - B[0][0] : null;
   $("ladder").innerHTML = asks.map(r => row(r, "ask")).join("") +
-    `<div class="spread">spread ${sp ?? "—"} · orta ${fmt(s.mid, 1)}</div>` + bids.map(r => row(r, "bid")).join("");
-  const b3 = s.bids.slice(0,3).reduce((a,r)=>a+r[1],0), a3 = s.asks.slice(0,3).reduce((a,r)=>a+r[1],0);
+    `<div class="spread">spread ${sp ?? "—"} · orta ${fmt(s.mid, 1)}</div>` + B.map(r => row(r, "bid")).join("");
+  const b3 = B.slice(0,3).reduce((a,r)=>a+r[1],0), a3 = A.slice(0,3).reduce((a,r)=>a+r[1],0);
   const I = a3 + b3 ? (b3 - a3) / (a3 + b3) : 0;
   $("imb").innerHTML = `dengesizlik (3 kademe) <b style="color:${I>0?'var(--bid)':'var(--ask)'}">${I>=0?'+':''}${I.toFixed(2)}</b>`;
   $("st-sp").textContent = sp ?? "—";
@@ -131,23 +146,20 @@ const COLS = [["id","ajan"],["cash","nakit"],["sh","hisse"],["w","servet"],["pos
 $("thead").innerHTML = COLS.map(([k,l]) => `<th data-k="${k}">${l}</th>`).join("");
 $("thead").onclick = e => { const k = e.target.dataset.k; if (!k) return;
   sortDir = sortKey === k ? -sortDir : -1; sortKey = k; render(); };
-const lastAct = new Array(N).fill(-1);
 function agentRows(s) {
-  for (let i = 0; i < N; i++) lastAct[i] = -1;
-  for (let k = 0; k <= t; k++) S[k].act.forEach((a, i) => { if (a >= 0) lastAct[i] = a; });
   const rows = [];
   for (let i = 0; i < N; i++) {
     const w = s.cash[i] + s.sh[i] * s.mid, w0 = D.cash0[i] + D.sh0[i] * D.V0;
     const hold = D.cash0[i] + D.sh0[i] * s.mid;
     rows.push({i, id:i, cash:s.cash[i], sh:s.sh[i], w, pos: s.sh[i]*s.mid/w*100,
-      ex:(w-hold)/w0*100, open:s.nopen[i], act:lastAct[i], flip:s.flip[i]});
+      ex:(w-hold)/w0*100, open:+s.nopen[i], act:LA[t*N+i], flip:FL[t*N+i]});
   }
   rows.sort((a,b) => (a[sortKey] - b[sortKey]) * sortDir);
   $("tbody").innerHTML = rows.map(r => `<tr data-i="${r.i}" class="${r.i===sel?'sel':''}">
     <td>${nm(r.i)}</td><td>${fmt(r.cash)}</td><td>${fmt(r.sh)}</td><td>${fmt(r.w)}</td>
     <td>${fmt(r.pos,1)}<span class="pbar"><i style="width:${Math.min(100,r.pos)}%"></i></span></td>
     <td class="${r.ex>=0?'pos':'neg'}">${r.ex>=0?'+':''}${fmt(r.ex,3)}</td>
-    <td>${r.open}</td><td>${r.act>=0?ACT[r.act]:'—'}</td><td class="${r.flip>0?'blof':''}">${r.flip}</td></tr>`).join("");
+    <td>${r.open}</td><td>${r.act>=0?ACT[r.act]:'—'}</td><td class="${r.flip>0?'blof':''}">${fmt(r.flip)}</td></tr>`).join("");
 }
 $("tbody").onclick = e => { const tr = e.target.closest("tr"); if (!tr) return;
   const i = +tr.dataset.i; sel = sel === i ? -1 : i; $("nsel").textContent = sel>=0 ? nm(sel)+" seçili" : ""; render(); };
@@ -155,7 +167,7 @@ $("tbody").onclick = e => { const tr = e.target.closest("tr"); if (!tr) return;
 // ---------- olay akışı ----------
 function drawFeed() {
   const out = [];
-  for (let k = t; k >= 0 && out.length < 60; k--) {
+  for (let k = t; k >= 0 && k > t - 3000 && out.length < 60; k--) {
     for (const e of S[k].ev.slice().reverse()) {
       const who = e[0] === "T" ? [e[3], e[4]] : [e[1]];
       if (sel >= 0 && !who.includes(sel)) continue;
@@ -165,64 +177,73 @@ function drawFeed() {
       else if (e[0] === "P") txt = `${nm(e[1])} ${e[2]>0?'ALIŞ':'SATIŞ'} emri ${e[4]} @ ${e[3]}`;
       else txt = `${nm(e[1])} iptal ${e[2]>0?'alış':'satış'} ${e[4]} @ ${e[3]} (ömür ${e[6]})` +
                  (e[5] ? ` <span class="blof">BLÖF? karşı tarafta dolum almıştı</span>` : "");
-      out.push(`<div><span class="stat">t${S[k].t}</span> ${txt}</div>`);
+      out.push(`<div><span class="stat">t${k}</span> ${txt}</div>`);
       if (out.length >= 60) break;
     }
   }
   $("feed").innerHTML = out.join("") || `<div class="stat">henüz olay yok</div>`;
 }
 
-// ---------- mum grafiği ----------
+// ---------- mum grafiği (kayan pencere, mumlar önbellekte) ----------
 const cv = $("chart"), cx = cv.getContext("2d");
-function candles(k) {
-  const res = []; let prev = S[0].mid;
-  for (let b = 0; b * k <= t; b++) {
-    let o=null,h=-Infinity,l=Infinity,c=null,v=0;
-    for (let j = b*k; j < Math.min((b+1)*k, t+1); j++)
-      for (const e of S[j].ev) if (e[0] === "T") { if (o===null) o=e[1]; h=Math.max(h,e[1]); l=Math.min(l,e[1]); c=e[1]; v+=e[2]; }
-    if (o === null) { o = c = h = l = prev; }
-    res.push({o,h,l,c,v}); prev = c;
-  }
-  return res;
+let CC = {k: 0, cs: null};
+function candleOf(b, k, upto, prev) {
+  let o=null,h=-Infinity,l=Infinity,c=null,v=0;
+  for (let j = b*k; j <= Math.min((b+1)*k - 1, upto); j++)
+    for (const e of S[j].ev) if (e[0] === "T") { if (o===null) o=e[1]; h=Math.max(h,e[1]); l=Math.min(l,e[1]); c=e[1]; v+=e[2]; }
+  if (o === null) { o = c = h = l = prev; }
+  return {o,h,l,c,v};
+}
+function allCandles(k) {
+  if (CC.k === k) return CC.cs;
+  const cs = []; let prev = S[0].mid;
+  for (let b = 0; b * k < n; b++) { const c = candleOf(b, k, n - 1, prev); cs.push(c); prev = c.c; }
+  CC = {k, cs}; return cs;
 }
 function drawChart() {
   const dpr = devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
   cv.width = W * dpr; cv.height = H * dpr; cx.setTransform(dpr,0,0,dpr,0,0);
   cx.clearRect(0,0,W,H);
-  const k = +$("bucket").value, cs = candles(k), nb = Math.ceil(S.length / k);
-  const padL = 8, padR = 56, top = 8, volH = H * 0.18, ph = H - volH - top - 22;
+  const k = +$("bucket").value, win = +$("win").value, span = win || n;
+  const a = win ? Math.max(0, t - win + 1) : 0;
+  const full = allCandles(k), b0 = Math.floor(a / k), b1 = Math.floor(t / k);
+  const cs = [];
+  for (let b = b0; b <= b1; b++)
+    cs.push(b < b1 ? full[b] : candleOf(b, k, t, b > 0 ? full[b-1].c : S[0].mid));
+  const padL = 8, padR = 56, top = 8, volH = H * 0.18, ph = H - volH - top - 22, pw = W - padL - padR;
+  const stride = Math.max(1, Math.floor(span / pw));
   let lo = Infinity, hi = -Infinity;
   for (const c of cs) { lo = Math.min(lo, c.l); hi = Math.max(hi, c.h); }
-  for (let j = 0; j <= t; j++) { lo = Math.min(lo, S[j].V, S[j].mid); hi = Math.max(hi, S[j].V, S[j].mid); }
+  for (let j = a; j <= t; j += stride) { lo = Math.min(lo, S[j].V, S[j].mid); hi = Math.max(hi, S[j].V, S[j].mid); }
   lo -= 2; hi += 2;
-  const cw = (W - padL - padR) / nb, X = b => padL + (b + .5) * cw, Y = p => top + (hi - p) / (hi - lo) * ph;
-  const XS = j => padL + (j + .5) / k * cw;
+  const XS = j => padL + (j - a + .5) / span * pw, Y = p => top + (hi - p) / (hi - lo) * ph;
   cx.strokeStyle = "#202833"; cx.fillStyle = "#7d8896"; cx.font = "11px ui-monospace,monospace"; cx.lineWidth = 1;
   const step = Math.max(1, Math.ceil((hi - lo) / 6));
   for (let p = Math.ceil(lo / step) * step; p <= hi; p += step) {
     cx.beginPath(); cx.moveTo(padL, Y(p)); cx.lineTo(W - padR, Y(p)); cx.stroke(); cx.fillText(p, W - padR + 6, Y(p) + 4);
   }
-  const tick = [50,100,200,500].find(s => S.length / s <= 10) || 1000;
-  for (let j = 0; j < S.length; j += tick) cx.fillText("t" + j, XS(j) - 8, H - 6);
+  const tick = [50,100,200,500,1000,2000,5000,10000].find(s => span / s <= 10) || 20000;
+  for (let j = Math.ceil(a / tick) * tick; j < a + span; j += tick) cx.fillText("t" + j, XS(j) - 8, H - 6);
   const line = (key, col, dash) => { cx.strokeStyle = col; cx.setLineDash(dash); cx.lineWidth = 1.4; cx.beginPath();
-    for (let j = 0; j <= t; j++) { const y = Y(S[j][key]); j ? cx.lineTo(XS(j), y) : cx.moveTo(XS(j), y); } cx.stroke(); cx.setLineDash([]); };
+    for (let j = a; j <= t; j += stride) { const y = Y(S[j][key]); j === a ? cx.moveTo(XS(j), y) : cx.lineTo(XS(j), y); } cx.stroke(); cx.setLineDash([]); };
   line("V", "#f2b84b", [5,4]); line("mid", "rgba(136,153,170,.7)", []);
-  const vmax = Math.max(1, ...cs.map(c => c.v));
-  cs.forEach((c, b) => {
-    const up = c.c >= c.o, col = up ? "#2fbf71" : "#f0514f", w = Math.max(1, cw * .66);
+  const vmax = Math.max(1, ...cs.map(c => c.v)), cw = Math.max(1, k / span * pw * .66);
+  cs.forEach((c, m) => {
+    const b = b0 + m, x = XS(b * k + (k - 1) / 2);
+    const col = c.c >= c.o ? "#2fbf71" : "#f0514f";
     cx.strokeStyle = col; cx.fillStyle = col; cx.lineWidth = 1;
-    cx.beginPath(); cx.moveTo(X(b), Y(c.h)); cx.lineTo(X(b), Y(c.l)); cx.stroke();
+    cx.beginPath(); cx.moveTo(x, Y(c.h)); cx.lineTo(x, Y(c.l)); cx.stroke();
     const y1 = Y(Math.max(c.o, c.c)), y2 = Y(Math.min(c.o, c.c));
-    cx.fillRect(X(b) - w/2, y1, w, Math.max(1, y2 - y1));
-    cx.globalAlpha = .45; cx.fillRect(X(b) - w/2, H - 22 - c.v / vmax * volH, w, c.v / vmax * volH); cx.globalAlpha = 1;
+    cx.fillRect(x - cw/2, y1, cw, Math.max(1, y2 - y1));
+    cx.globalAlpha = .45; cx.fillRect(x - cw/2, H - 22 - c.v / vmax * volH, cw, c.v / vmax * volH); cx.globalAlpha = 1;
   });
-  if (sel >= 0) for (let j = 0; j <= t; j++) for (const e of S[j].ev) if (e[0] === "T" && (e[3] === sel || e[4] === sel)) {
-    const buy = e[3] === sel, y = Y(e[1]), x = XS(j);
-    cx.fillStyle = "#c98bff"; cx.beginPath();
-    if (buy) { cx.moveTo(x, y + 3); cx.lineTo(x - 4, y + 10); cx.lineTo(x + 4, y + 10); }
-    else { cx.moveTo(x, y - 3); cx.lineTo(x - 4, y - 10); cx.lineTo(x + 4, y - 10); }
-    cx.fill();
-  }
+  if (sel >= 0) { cx.fillStyle = "#c98bff";
+    for (let j = a; j <= t; j++) for (const e of S[j].ev) if (e[0] === "T" && (e[3] === sel || e[4] === sel)) {
+      const y = Y(e[1]), x = XS(j); cx.beginPath();
+      if (e[3] === sel) { cx.moveTo(x, y + 3); cx.lineTo(x - 4, y + 10); cx.lineTo(x + 4, y + 10); }
+      else { cx.moveTo(x, y - 3); cx.lineTo(x - 4, y - 10); cx.lineTo(x + 4, y - 10); }
+      cx.fill();
+    } }
   const s = S[t]; cx.fillStyle = "#d6dde6"; cx.fillRect(W - padR, Y(s.mid) - 8, padR, 16);
   cx.fillStyle = "#0d1117"; cx.fillText(s.mid.toFixed(1), W - padR + 4, Y(s.mid) + 4);
 }
@@ -230,25 +251,27 @@ function drawChart() {
 // ---------- ana döngü ----------
 function render() {
   const s = S[t];
-  $("slider").value = t; $("st-t").textContent = `${s.t} / ${D.T - 1}`;
+  $("slider").value = t; $("st-t").textContent = `${t.toLocaleString("tr-TR")} / ${(n - 1).toLocaleString("tr-TR")}`;
   $("st-mid").textContent = fmt(s.mid, 1); $("st-last").textContent = s.last ?? "—"; $("st-v").textContent = fmt(s.V, 1);
   drawBook(s); agentRows(s); drawFeed(); drawChart();
 }
 function play() {
   if (timer) { clearInterval(timer); timer = null; $("play").textContent = "▶ Oynat"; return; }
-  if (t >= S.length - 1) t = 0;
+  if (t >= n - 1) t = 0;
   $("play").textContent = "❚❚ Durdur";
-  timer = setInterval(() => { if (t >= S.length - 1) return play(); t++; render(); }, 1000 / +$("speed").value);
+  const sp = +$("speed").value, inc = Math.max(1, Math.round(sp / 60));
+  timer = setInterval(() => { if (t >= n - 1) return play(); t = Math.min(n - 1, t + inc); render(); }, 1000 / Math.min(sp, 60));
 }
 $("play").onclick = play;
 $("speed").onchange = () => { if (timer) { play(); play(); } };
 $("slider").oninput = e => { t = +e.target.value; render(); };
 $("bucket").onchange = render;
+$("win").onchange = () => { autoBucket(); render(); };
 addEventListener("resize", drawChart);
 addEventListener("keydown", e => {
   if (e.code === "Space") { e.preventDefault(); play(); }
-  if (e.code === "ArrowRight") { t = Math.min(S.length - 1, t + 1); render(); }
-  if (e.code === "ArrowLeft") { t = Math.max(0, t - 1); render(); }
+  if (e.code === "ArrowRight") { t = Math.min(n - 1, t + (e.shiftKey ? 100 : 1)); render(); }
+  if (e.code === "ArrowLeft") { t = Math.max(0, t - (e.shiftKey ? 100 : 1)); render(); }
 });
 render();
 </script>

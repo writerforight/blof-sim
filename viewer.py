@@ -17,6 +17,20 @@ import blof_sim as bs
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+def compact(rec, levels=10):
+    """Adım kayıtlarını sütun düzenine çevirir (20.000 adımda dosya boyutu için).
+    Kademe: [fiyat, hacim] ya da MLP payı varsa [fiyat, hacim, mlp, [ajanlar]].
+    act/nopen: ajan başına tek karakter ('-' = eylem yok)."""
+    lad = lambda rows: [r[:2] if r[2] == 0 else r for r in rows[:levels]]
+    return dict(
+        V=[round(r["V"], 1) for r in rec], mid=[r["mid"] for r in rec], last=[r["last"] for r in rec],
+        bids=[lad(r["bids"]) for r in rec], asks=[lad(r["asks"]) for r in rec],
+        cash=[[int(round(x)) for x in r["cash"]] for r in rec], sh=[r["sh"] for r in rec],
+        nopen=["".join(map(str, r["nopen"])) for r in rec],
+        act=["".join("-" if x < 0 else str(x) for x in r["act"]) for r in rec],
+        ev=[r["ev"] for r in rec])
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--pop", default=os.path.join(HERE, "runs", "base_imb5", "pop.npy"))
@@ -40,8 +54,8 @@ def main():
     rec = []
     excess, info = bs.run_episode(thetas, cfg, rng, rec=rec)
     data = dict(src=src, seed=a.seed, T=cfg.T, V0=cfg.V0, n_imb=cfg.n_imb, n_zi=cfg.n_zi,
-                cash0=info["cash0"], sh0=info["sh0"], steps=rec,
-                excess=[float(x) for x in excess])
+                cash0=info["cash0"], sh0=info["sh0"], excess=[float(x) for x in excess],
+                **compact(rec))
     with open(os.path.join(HERE, "viewer_template.html")) as f:
         html = f.read().replace("__DATA__", json.dumps(data, separators=(",", ":")))
     with open(a.out, "w") as f:
