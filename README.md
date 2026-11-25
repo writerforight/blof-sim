@@ -20,7 +20,7 @@ Tek dosyalık, yalnızca NumPy kullanan bir limit emir defteri simülasyonu. LLM
 pip install numpy
 python blof_sim.py --gens 200 --out runs/base_imb5
 python blof_sim.py --gens 200 --set n_imb=0 --out runs/base_imb0   # kurbansız piyasa
-python viewer.py --pop runs/base_imb5/pop.npy                      # viewer.html üretir
+python viewer.py --pop runs/base_imb5/pop.npy --set T=1000         # viewer.html üretir (1000 adımlık bölüm)
 ```
 Her ayar `--set key=value` ile değiştirilebilir (bkz. `Config`).
 
