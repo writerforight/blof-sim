@@ -18,6 +18,11 @@ button,select{background:#1f2833;color:var(--text);border:1px solid var(--line);
 button:hover{border-color:var(--mute)}
 #slider{flex:1;min-width:200px;accent-color:var(--accent)}
 .stat{color:var(--mute)} .stat b{color:var(--text);font-weight:600}
+#controls{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:8px 16px;border-bottom:1px solid var(--line);background:#11161d;color:var(--mute)}
+#controls input{width:76px;background:#1f2833;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:3px 6px;font:inherit}
+#controls label{white-space:nowrap}
+#c-run{background:var(--accent);color:#111;border-color:var(--accent);font-weight:600}
+#c-run:disabled{opacity:.5}
 main{display:grid;grid-template-columns:330px 1fr;grid-template-rows:minmax(360px,48vh) 1fr;gap:10px;padding:10px 16px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;min-width:0;overflow:hidden;display:flex;flex-direction:column}
 .card h2{font-size:12px;margin:0 0 8px;color:var(--mute);font-weight:500;letter-spacing:.05em;text-transform:uppercase;display:flex;justify-content:space-between;gap:8px}
@@ -68,6 +73,18 @@ tbody tr{cursor:pointer} tbody tr:hover{background:#1a222c} tbody tr.sel{backgro
   <span class="stat">spread <b id="st-sp"></b></span>
   <span class="stat" id="st-src"></span>
 </header>
+<div id="controls">
+  <label>popülasyon <select id="c-pop"></select></label>
+  <label>seed <input id="c-seed" type="number" step="1"></label><button id="c-dice" title="rastgele seed">🎲</button>
+  <label>adım <input id="c-T" type="number" min="50" max="100000" step="1000"></label>
+  <label>ZI <input id="c-n_zi" type="number" min="0" max="60" step="1"></label>
+  <label>IMB <input id="c-n_imb" type="number" min="0" max="60" step="1"></label>
+  <label>IMB eşiği <input id="c-imb_thr" type="number" min="0" max="1" step="0.05"></label>
+  <label>V oynaklığı <input id="c-fund_sigma" type="number" min="0" step="0.1"></label>
+  <label>sıcaklık <input id="c-temp" type="number" min="0" step="0.1"></label>
+  <button id="c-run">Çalıştır</button><span id="c-prog"></span>
+  <span id="st-sum"></span>
+</div>
 <main>
   <section class="card" id="book">
     <h2><span>Emir defteri</span><span id="imb"></span></h2>
@@ -94,32 +111,71 @@ tbody tr{cursor:pointer} tbody tr:hover{background:#1a222c} tbody tr.sel{backgro
     </section>
   </div>
 </main>
+<script src="sim.js"></script>
 <script>
-const D = __DATA__;
-const n = D.mid.length, N = D.cash0.length, ACT = ["al","sat","iptal-al","iptal-sat","bekle"];
+const CFG = __CFG__, POPS = __POPS__;
+const ACT = ["al","sat","iptal-al","iptal-sat","bekle"];
 const $ = id => document.getElementById(id);
+let D = null, S = [], n = 0, N = 0, LA = null, FL = null, CC = {k: 0, cs: null};
 let t = 0, timer = null, sel = -1, sortKey = "ex", sortDir = -1;
 const fmt = (x, d=0) => x == null ? "—" : x.toLocaleString("tr-TR", {minimumFractionDigits:d, maximumFractionDigits:d});
 const nm = i => i >= 0 ? "A" + (i + 1) : (i == -1 ? "ZI" : "IMB");
 const lv = r => [r[0], r[1], r[2] || 0, r[3] || []];
-const S = Array.from({length: n}, (_, k) => ({t: k, V: D.V[k], mid: D.mid[k], last: D.last[k],
-  get bids() { return D.bids[k].map(lv); }, get asks() { return D.asks[k].map(lv); },
-  cash: D.cash[k], sh: D.sh[k], nopen: D.nopen[k], ev: D.ev[k]}));
-// birikimli son eylem ve blöf hacmi: yüklemede bir kez
-const LA = new Int8Array(n * N), FL = new Int32Array(n * N);
-{ const la = new Int8Array(N).fill(-1), fl = new Int32Array(N);
+function load(R) {
+  D = R; n = R.mid.length; N = R.cash0.length; CC = {k: 0, cs: null}; t = 0; sel = -1; $("nsel").textContent = "";
+  S = Array.from({length: n}, (_, k) => ({t: k, V: R.V[k], mid: R.mid[k], last: R.last[k],
+    get bids() { return R.bids[k].map(lv); }, get asks() { return R.asks[k].map(lv); },
+    cash: R.cash[k], sh: R.sh[k], nopen: R.nopen[k], ev: R.ev[k]}));
+  // birikimli son eylem ve blöf hacmi: yüklemede bir kez
+  LA = new Int8Array(n * N); FL = new Int32Array(n * N);
+  const la = new Int8Array(N).fill(-1), fl = new Int32Array(N);
   for (let k = 0; k < n; k++) {
-    const a = D.act[k];
+    const a = R.act[k];
     for (let i = 0; i < N; i++) { const c = a.charCodeAt(i) - 48; if (c >= 0 && c < 5) la[i] = c; }
-    for (const e of D.ev[k]) if (e[0] === "C" && e[5]) fl[e[1]] += e[4];
+    for (const e of R.ev[k]) if (e[0] === "C" && e[5]) fl[e[1]] += e[4];
     LA.set(la, k * N); FL.set(fl, k * N);
-  } }
-$("slider").max = n - 1;
-$("win").value = n > 1500 ? 1000 : 0;
-$("st-src").textContent = `${D.src} · seed ${D.seed} · ${n.toLocaleString("tr-TR")} adım · ${D.n_zi} ZI + ${D.n_imb} IMB`;
+  }
+  $("slider").max = n - 1;
+  $("win").value = n > 1500 ? 1000 : 0;
+  autoBucket();
+  $("st-src").textContent = `${R.popName} · seed ${R.seed} · ${R.n_zi} ZI + ${R.n_imb} IMB`;
+  const st = R.stats;
+  $("st-sum").innerHTML = `dolum <b>${st.fill.toFixed(2)}</b> · iptal <b>${st.cancel.toFixed(2)}</b> · blöf <b>${st.flip.toFixed(3)}</b> · son fiyat <b>${st.Pf.toFixed(1)}</b>`;
+}
 function autoBucket() { const span = +$("win").value || n;
   $("bucket").value = [1,5,10,20,50,100,200,500].find(k => span / k <= 90) || 500; }
-autoBucket();
+
+// ---------- ayarlar + tarayıcıda simülasyon ----------
+const PARAMS = ["T", "n_zi", "n_imb", "imb_thr", "fund_sigma", "temp"];
+$("c-pop").innerHTML = [...Object.keys(POPS), "rastgele"].map(k =>
+  `<option value="${k}">${k === "rastgele" ? "rastgele (eğitilmemiş)" : k}</option>`).join("");
+{ const q = new URLSearchParams(location.search);
+  $("c-seed").value = q.get("seed") ?? 7;
+  for (const k of PARAMS) $("c-" + k).value = q.get(k) ?? (k === "T" ? 20000 : CFG[k]);
+  if (q.get("pop") && (POPS[q.get("pop")] || q.get("pop") === "rastgele")) $("c-pop").value = q.get("pop"); }
+async function runSim() {
+  if (timer) play();
+  const cfg = {...CFG};
+  for (const k of PARAMS) cfg[k] = Math.max(0, +$("c-" + k).value || 0);
+  cfg.T = Math.max(50, Math.min(100000, Math.round(cfg.T))); cfg.n_zi = Math.round(cfg.n_zi); cfg.n_imb = Math.round(cfg.n_imb);
+  $("c-T").value = cfg.T;
+  const seed = Math.round(+$("c-seed").value) || 0, popName = $("c-pop").value;
+  history.replaceState(null, "", "?" + new URLSearchParams({pop: popName, seed, ...Object.fromEntries(PARAMS.map(k => [k, cfg[k]]))}));
+  $("c-run").disabled = true;
+  const thetas = popName === "rastgele" ? BlofSim.randomPop(cfg, seed + 1) : POPS[popName];
+  const g = BlofSim.episode(thetas, cfg, seed);
+  let r;
+  while (!(r = g.next()).done) {
+    $("c-prog").textContent = `çalışıyor… %${Math.round(r.value * 100)}`;
+    await new Promise(res => setTimeout(res, 0));
+  }
+  Object.assign(r.value, {seed, popName, n_zi: cfg.n_zi, n_imb: cfg.n_imb, V0: cfg.V0});
+  $("c-prog").textContent = ""; $("c-run").disabled = false;
+  load(r.value); render();
+}
+$("c-run").onclick = runSim;
+$("c-dice").onclick = () => { $("c-seed").value = Math.floor(Math.random() * 100000); runSim(); };
+$("controls").addEventListener("keydown", e => { if (e.key === "Enter" && e.target.tagName === "INPUT") runSim(); });
 
 // ---------- defter ----------
 function drawBook(s) {
@@ -186,7 +242,6 @@ function drawFeed() {
 
 // ---------- mum grafiği (kayan pencere, mumlar önbellekte) ----------
 const cv = $("chart"), cx = cv.getContext("2d");
-let CC = {k: 0, cs: null};
 function candleOf(b, k, upto, prev) {
   let o=null,h=-Infinity,l=Infinity,c=null,v=0;
   for (let j = b*k; j <= Math.min((b+1)*k - 1, upto); j++)
@@ -269,11 +324,12 @@ $("bucket").onchange = render;
 $("win").onchange = () => { autoBucket(); render(); };
 addEventListener("resize", drawChart);
 addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
   if (e.code === "Space") { e.preventDefault(); play(); }
   if (e.code === "ArrowRight") { t = Math.min(n - 1, t + (e.shiftKey ? 100 : 1)); render(); }
   if (e.code === "ArrowLeft") { t = Math.max(0, t - (e.shiftKey ? 100 : 1)); render(); }
 });
-render();
+runSim();
 </script>
 </body>
 </html>

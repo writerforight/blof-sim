@@ -20,9 +20,12 @@ Tek dosyalık, yalnızca NumPy kullanan bir limit emir defteri simülasyonu. LLM
 pip install numpy
 python blof_sim.py --gens 200 --out runs/base_imb5
 python blof_sim.py --gens 200 --set n_imb=0 --out runs/base_imb0   # kurbansız piyasa
-python viewer.py --pop runs/base_imb5/pop.npy --set T=20000        # viewer.html üretir (20.000 adım, ~25 sn)
+python viewer.py                                                   # runs/*/pop.npy -> index.html
 ```
 Her ayar `--set key=value` ile değiştirilebilir (bkz. `Config`).
+
+## Tahta (tarayıcı)
+`index.html` + `sim.js`: bölüm tarayıcıda çalışır (`sim.js`, `run_episode`'un JS kopyası; 10 bölümlük karşılaştırmada dolum/iptal/blöf/oynaklık Python ile gürültü içinde aynı). Sayfadan popülasyon, seed, adım sayısı (≤100.000), ZI/IMB sayısı, IMB eşiği, temel değer oynaklığı ve sıcaklık değişir; ayarlar URL'ye yazılır, link paylaşılabilir. Aynı seed Python ile aynı bölümü vermez (farklı RNG).
 
 ## İlk sonuç (200 nesil)
 Blöf henüz kendiliğinden çıkmadı: ajanlar iptal etmeyi bırakıp 1 tick spread'de piyasa yapıcılığa yöneldi (iptal oranı 0,70 → 0,2–0,3). Blöf imzası IMB'li (0,095) ve IMB'siz (0,080) piyasada gürültü düzeyinde farklı.
